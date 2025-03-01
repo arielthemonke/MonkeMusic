@@ -17,9 +17,13 @@ namespace MonkeMusic
         private int currentClipIndex = 0;
         private bool isPlaying = false;
         private bool isPaused = false;
+        private float lastPrimaryPressTime;
+        private float lastSecondaryPressTime;
+        private float lastStopPressTime;
+        private ConfigEntry<float> configCooldown;
 
 
-        // Configuration
+        // Config file stuff
         private ConfigEntry<float> configVolume;
         private ConfigEntry<KeyboardShortcut> configPlayPause;
         private ConfigEntry<KeyboardShortcut> configStop;
@@ -35,6 +39,7 @@ namespace MonkeMusic
             configNext = Config.Bind("Controls", "Next", new KeyboardShortcut(KeyCode.N));
             configVolUp = Config.Bind("Controls", "Volume Up", new KeyboardShortcut(KeyCode.UpArrow));
             configVolDown = Config.Bind("Controls", "Volume Down", new KeyboardShortcut(KeyCode.DownArrow));
+            configCooldown = Config.Bind("Settings", "ControllerCooldown", 0.5f, "Cooldown between controller inputs (seconds)");
 
             musicFolderPath = Path.Combine(Path.GetDirectoryName(Info.Location), "Music");
             Directory.CreateDirectory(musicFolderPath);
@@ -69,53 +74,49 @@ namespace MonkeMusic
 
         void HandleInput()
         {
-            if (configPlayPause.Value.IsDown() || ControllerInputPoller.instance.rightControllerPrimaryButton)
+            float currentTime = Time.time;
+            if ((configPlayPause.Value.IsDown() || (ControllerInputPoller.instance.rightControllerPrimaryButton && currentTime - lastPrimaryPressTime > configCooldown.Value)) && !ControllerInputPoller.instance.leftControllerPrimaryButton)
             {
+                if (ControllerInputPoller.instance.rightControllerPrimaryButton)
+                    lastPrimaryPressTime = currentTime;
+
                 if (isPlaying)
                 {
-                    if (isPaused)
-                    {
-                        ResumePlayback();
-                    }
-                    else
-                    {
-                        PausePlayback();
-                    }
+                    if (isPaused) ResumePlayback();
+                    else PausePlayback();
                 }
                 else if (loadedClips.Length > 0)
                 {
                     StartPlayback();
                 }
             }
-
-            if (configStop.Value.IsDown() || ControllerInputPoller.instance.leftControllerPrimaryButton)
+            if ((configStop.Value.IsDown() || (ControllerInputPoller.instance.leftControllerPrimaryButton && currentTime - lastStopPressTime > configCooldown.Value)))
             {
+                if (ControllerInputPoller.instance.leftControllerPrimaryButton)
+                    lastStopPressTime = currentTime;
                 StopPlayback();
             }
-
-            if ((configNext.Value.IsDown() || ControllerInputPoller.instance.rightControllerSecondaryButton) && isPlaying)
+            if (((configNext.Value.IsDown() || ControllerInputPoller.instance.rightControllerSecondaryButton && currentTime - lastSecondaryPressTime > configCooldown.Value)) && isPlaying)
             {
+                if (ControllerInputPoller.instance.rightControllerSecondaryButton)
+                    lastSecondaryPressTime = currentTime;
                 SkipToNextSong();
             }
-
             if (configVolUp.Value.IsDown())
             {
                 SetVolume(configVolume.Value + 0.1f);
             }
-
             if (configVolDown.Value.IsDown())
             {
                 SetVolume(configVolume.Value - 0.1f);
             }
         }
-
         void SetVolume(float newVolume)
         {
             configVolume.Value = Mathf.Clamp01(newVolume);
             audioSource.volume = configVolume.Value;
             Config.Save();
         }
-
         void StartPlayback()
         {
             if (loadedClips.Length == 0) return;
@@ -127,7 +128,6 @@ namespace MonkeMusic
 
             PlayCurrentSong();
         }
-
         void PlayCurrentSong()
         {
             audioSource.clip = loadedClips[currentClipIndex];
